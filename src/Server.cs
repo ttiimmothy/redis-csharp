@@ -13,11 +13,38 @@ try
     using var socket = server.AcceptSocket();
     Console.WriteLine("Connected!");
     var buffer = new byte[1024];
-    var bytes = socket.Receive(buffer);
-    var data = Encoding.UTF8.GetString(buffer, 0, bytes);
-    Console.WriteLine("Received: {0}", data);
-    var response = Encoding.UTF8.GetBytes("+PONG\r\n");
-    socket.Send(response);
+    while (true)
+    {
+      try
+      {
+        var bytes = socket.Receive(buffer);
+        var data = Encoding.ASCII.GetString(buffer, 0, bytes);
+        var lines = data.Split("\n")
+                        .Select(x => x.Trim())
+                        .Where(x => !string.IsNullOrEmpty(x));
+        foreach (var line in lines)
+        {
+          if (line.ToLower() == "ping")
+          {
+            var response = Encoding.UTF8.GetBytes("+PONG\r\n");
+            socket.Send(response);
+          }
+          else
+          {
+            Console.WriteLine($"Unknown command '{line}'");
+          }
+        }
+        if (socket.Poll(1000, SelectMode.SelectRead) && socket.Available == 0)
+        {
+          break;
+        }
+      }
+      catch (SocketException e)
+      {
+        Console.WriteLine(e.Message);
+        break;
+      }
+    }
   }
 }
 catch (SocketException e)
