@@ -3,31 +3,49 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-var server = new TcpListener(IPAddress.Any, 6379);
-try
+public static class Program
 {
-  server.Start();
-  while (true)
+  public static async Task Main()
   {
-    Console.WriteLine("Waiting for a connection...");
-    using var socket = server.AcceptSocket();
-    Console.WriteLine("Connected!");
-    var buffer = new byte[1024];
-    while (true)
+    var redis = new Redis();
+    await redis.Start();
+  }
+}
+public class Redis
+{
+  private readonly TcpListener _listener = new(IPAddress.Any, 6379);
+  public async Task Start(CancellationToken token = default)
+  {
+    _listener.Start();
+    while (!token.IsCancellationRequested)
     {
-      try
+      var client = await _listener.AcceptTcpClientAsync().ConfigureAwait(false);
+      _ = HandleClient(client, token);
+    }
+    1
+    _listener.Stop();
+  }
+  private async Task HandleClient(TcpClient client, CancellationToken token = default)
+  {
+    using (client)
+    {
+      var buffer = new Byte[1024];
+      var stream = client.GetStream();
+      while (!token.IsCancellationRequested)
       {
-        var bytes = socket.Receive(buffer);
+        var bytes = await stream.ReadAsync(buffer, 0, buffer.Length, token).ConfigureAwait(false);
+        if (bytes == 0)
+        {
+          return;
+        }
         var data = Encoding.ASCII.GetString(buffer, 0, bytes);
-        var lines = data.Split("\n")
-                        .Select(x => x.Trim())
-                        .Where(x => !string.IsNullOrEmpty(x));
+        var lines = data.Split("\n") Select(x => x.Trim()).Where(x => !string.IsNullOrEmpty(x));
         foreach (var line in lines)
         {
           if (line.ToLower() == "ping")
           {
             var response = Encoding.UTF8.GetBytes("+PONG\r\n");
-            socket.Send(response);
+            await stream.WriteAsync(response, 0, response.Length, token).ConfigureAwait(false);
           }
           else
           {
@@ -46,12 +64,4 @@ try
       }
     }
   }
-}
-catch (SocketException e)
-{
-  Console.WriteLine(e.Message);
-}
-finally
-{
-  server.Stop();
 }
