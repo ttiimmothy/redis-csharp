@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System;
 using System.Net;
 using System.Net.Sockets;
@@ -15,6 +16,7 @@ public static class Program
 public class Redis
 {
   private readonly TcpListener _listener = new(IPAddress.Any, 6379);
+  private readonly ConcurrentDictionary<string, string> _values = new();
   public async Task Start(CancellationToken token = default)
   {
     _listener.Start();
@@ -40,6 +42,7 @@ public class Redis
           return;
         }
         var data = Encoding.ASCII.GetString(buffer, 0, bytes);
+        Console.WriteLine("Received: {0}", data.Replace("\r\n", "|"));
         var cmd = new RespParser().Parse(data) as RespArray;
         if (cmd == null)
         {
@@ -53,11 +56,24 @@ public class Redis
             switch (rs.Value.ToLower())
             {
               case "ping":
-                response = Encoding.UTF8.GetBytes("+PONG\r\n");
+                response = Encoding.ASCII.GetBytes("+PONG\r\n");
                 break;
               case "echo":
                 var echoString = (RespString)cmd.Items[1];
-                response = Encoding.UTF8.GetBytes($"+{echoString.Value}\r\n");
+                response = Encoding.ASCII.GetBytes($"+{echoString.Value}\r\n");
+                break;
+              case "set":
+                var key = (RespString)cmd.Items[1];
+                var value = (RespString)cmd.Items[2];
+                _values[key.Value] = value.Value;
+                response = Encoding.ASCII.GetBytes("+OK\r\n");
+                break;
+              case "get":
+                var getKey = (RespString)cmd.Items[1];
+                if (_values.TryGetValue(getKey.Value, out var getValue))
+                {
+                  response = Encoding.ASCII.GetBytes($"${getValue.Length}\r\n{getValue}\r\n");
+                }
                 break;
               default:
                 Console.WriteLine($"Unknown command '{rs.Value}'");
