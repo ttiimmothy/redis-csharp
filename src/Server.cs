@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System;
 using System.Net;
 using System.Net.Sockets;
@@ -16,7 +17,7 @@ public static class Program
 public class Redis
 {
   private readonly TcpListener _listener = new(IPAddress.Any, 6379);
-  private readonly ConcurrentDictionary<string, string> _values = new();
+  private readonly ConcurrentDictionary<string, (string, DateTime)> _values = new();
   public async Task Start(CancellationToken token = default)
   {
     _listener.Start();
@@ -65,14 +66,34 @@ public class Redis
               case "set":
                 var key = (RespString)cmd.Items[1];
                 var value = (RespString)cmd.Items[2];
-                _values[key.Value] = value.Value;
+                if (cmd.Items.Length > 3)
+                {
+                  var setCmd = (RespString)cmd.Items[3];
+                  Debug.Assert(setCmd.Value == "px");
+                  var expire = (RespString)cmd.Items[4];
+                  var expireMs = int.Parse(expire.Value);
+                  _values[key.Value] =
+                      (value.Value, DateTime.Now.AddMilliseconds(expireMs));
+                }
+                else
+                {
+                  _values[key.Value] = (value.Value, DateTime.MaxValue);
+                }
                 response = Encoding.ASCII.GetBytes("+OK\r\n");
                 break;
               case "get":
+                response = Encoding.ASCII.GetBytes("$-1\r\n");
                 var getKey = (RespString)cmd.Items[1];
                 if (_values.TryGetValue(getKey.Value, out var getValue))
                 {
-                  response = Encoding.ASCII.GetBytes($"${getValue.Length}\r\n{getValue}\r\n");
+                  if (DateTime.Now < getValue.Item2)
+                  {
+                    response = Encoding.ASCII.GetBytes($"${getValue.Item1.Length}\r\n{getValue.Item1}\r\n");
+                  }
+                  else
+                  {
+                    _values.TryRemove(getKey.Value, out _);
+                  }
                 }
                 break;
               default:
