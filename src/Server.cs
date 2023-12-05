@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using codecrafters_redis;
 
 public static class Program
 {
@@ -39,29 +40,47 @@ public class Redis
           return;
         }
         var data = Encoding.ASCII.GetString(buffer, 0, bytes);
-        var lines = data.Split("\n") Select(x => x.Trim()).Where(x => !string.IsNullOrEmpty(x));
-        foreach (var line in lines)
+        var cmd = new RespParser().Parse(data) as RespArray;
+        if (cmd == null)
         {
-          if (line.ToLower() == "ping")
+          Console.WriteLine($"Unknown command '{data}'");
+          continue;
+        }
+        byte[]? response = null;
+        switch (cmd.Items[0])
+        {
+          case RespString rs:
+            switch (rs.Value.ToLower())
+            {
+              case "ping":
+                response = Encoding.UTF8.GetBytes("+PONG\r\n");
+                break;
+              case "echo":
+                var echoString = (RespString)cmd.Items[1];
+                response = Encoding.UTF8.GetBytes($"+{echoString.Value}\r\n");
+                break;
+              default:
+                Console.WriteLine($"Unknown command '{rs.Value}'");
+                break;
+            }
+            break;
+          default:
+            Console.WriteLine("Unknown type");
+            break;
+        }
+        if (response != null)
+        {
+          await stream.WriteAsync(response, 0, response.Length, token).ConfigureAwait(false);
+          if (socket.Poll(1000, SelectMode.SelectRead) && socket.Available == 0)
           {
-            var response = Encoding.UTF8.GetBytes("+PONG\r\n");
-            await stream.WriteAsync(response, 0, response.Length, token).ConfigureAwait(false);
-          }
-          else
-          {
-            Console.WriteLine($"Unknown command '{line}'");
+            break;
           }
         }
-        if (socket.Poll(1000, SelectMode.SelectRead) && socket.Available == 0)
-        {
+      catch (SocketException e)
+      {
+          Console.WriteLine(e.Message);
           break;
         }
       }
-      catch (SocketException e)
-      {
-        Console.WriteLine(e.Message);
-        break;
-      }
     }
   }
-}
