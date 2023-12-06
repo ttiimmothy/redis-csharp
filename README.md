@@ -1,6 +1,7 @@
 [![progress-banner](https://backend.codecrafters.io/progress/redis/8f25c9b7-00a9-4ec8-8cf6-1731111ece22)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
 # Redis CSharp
+[![ci](https://github.com/ttiimmothy/redis-csharp/actions/workflows/ci.yml/badge.svg)](https://github.com/ttiimmothy/redis-csharp/actions/workflows/ci.yml)
 
 This is a starting point for C# solutions to the
 ["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
